@@ -1,33 +1,51 @@
-name: Build BlockLauncher (tile render API)
+name: Build BlockLauncher 0.8.1 (Render API)
 
 on:
   push:
-    branches: [ main ]
+    branches: [main, master]
   pull_request:
-  workflow_dispatch:
+  workflow_dispatch:        # permite lanzarlo a mano desde la pestaña Actions
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
+    runs-on: ubuntu-22.04   # x86_64; las herramientas Ant/NDK antiguas necesitan Linux
+    timeout-minutes: 60
 
-      - uses: actions/setup-java@v4
+    steps:
+      - name: Descargar el codigo
+        uses: actions/checkout@v4
+
+      # Las herramientas Ant del SDK (android update project, etc.) solo funcionan con JDK 8
+      - name: Instalar JDK 8
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '8'
 
-      - name: Instalar Ant y utilidades de 32 bits
-        run: |
-          sudo dpkg --add-architecture i386
-          sudo apt-get update
-          sudo apt-get install -y ant libc6:i386 libstdc++6:i386 zlib1g:i386
-
-      - name: Ejecutar script de build
-        run: bash scripts/build.sh
-
-      - uses: actions/upload-artifact@v4
+      # Evita bajar SDK y NDK (~500 MB) en cada ejecucion
+      - name: Cache de SDK y NDK
+        uses: actions/cache@v4
         with:
-          name: BlockLauncher-debug-apk
-          path: deps/**/bin/*-debug.apk
+          path: |
+            ~/BLBUILD/android-sdk
+            ~/BLBUILD/android-ndk-r10e
+          key: bl-toolchain-${{ hashFiles('tools/build.sh') }}
+
+      - name: Verificar simbolos del juego (opcional)
+        # Solo corre si subes un libminecraftpe.so de 0.8.1 a la carpeta tools/
+        run: |
+          if [ -f tools/libminecraftpe.so ]; then
+            bash tools/check_symbols.sh tools/libminecraftpe.so
+          else
+            echo "No hay tools/libminecraftpe.so, omito la verificacion."
+          fi
+
+      - name: Compilar (ndk-build + ant)
+        run: bash tools/build.sh
+
+      - name: Subir el APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: BlockLauncher-0.8.1-renderapi
+          path: out/*.apk
           if-no-files-found: error
